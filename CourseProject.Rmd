@@ -1,0 +1,117 @@
+---
+title: 'Mileage: Is Automatic better than Manual Transmission?'
+author: "Talha Mahmood Chaudhry"
+date: "8/31/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=7, fig.height=4, warning=FALSE, message=FALSE)
+```
+
+## Executive Summary
+
+It has long been a subject of debate whether Automatic Transmission has lower mileage than Manual Transmission. We here at *Motor Trend* want to illuminate our readers with our proposition and the resulting analysis. Using the **mtcars** dataset in R, it is determined that mileage increases by 7.245 for manual from automatic. However, upon closer inspection and varoance testing, it is determined that changes in mileage are more explained by number of Cylinders and Weight of the car. Thus, although it does seem that Manual has better mileage than Automatic, the other factors have more impact on mileage than transmission type.
+
+## Data Structure and Processing^[Click [here](https://github.com/chaudhrytalha85/RegressionAnalysisProject) for R markdown file]
+
+```{r requirements, echo=FALSE, results='hide'}
+## Load necessary packages and dataset
+require(tidyverse); require(ggplot2); require(GGally)
+library(datasets); data("mtcars")
+```
+Here's a look at a few lines of the data. For a documentaion about the data click [here](https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/mtcars.html).
+
+```{r structure, echo=FALSE}
+head(mtcars, 3)
+```
+The features of the data are as follows:  
+	1. **mpg**	Miles/(US) gallon                        7. **qsec**	1/4 mile time  
+  2. **cyl**	Number of cylinders                     8. **vs**	V/S  
+	3. **disp**	Displacement (cu.in.)                   9. **am**	Transmission (0 = automatic, 1 = manual)  
+  4. **hp**	Gross horsepower                         10. **gear**	Number of forward gears  
+	5. **drat**	Rear axle ratio                         11. **carb**	Number of carburetors  
+  6. **wt**	Weight (1000 lbs)    
+ 
+```{r factors, echo=FALSE}
+dat <- as_tibble(mtcars)
+dat <- dat %>% mutate(cyl = factor(cyl), vs = factor(vs), am = factor(am, labels = c("Automatic", "Manual")), gear = factor(gear), carb = factor(carb))
+```
+For our analysis, we can safely disregard "qsec" as a predictor, since its a determinant of acceleration. Whereas "cyl", "vs", "am", "gear" and "carb" are categorical variables and are treated as factors.
+
+## Exploratory Analysis
+
+Looking at the boxplot (Fig 1 Appendix) depicting mileage (mpg) grouped by transmission it can be observed that Manual Transmission does have a better mileage than Automatic Transmission. 
+The pairs plot shows that the features of the dataset have some correlation with each other. This will have to be taken into consideration when building models.(Appendix - Fig 2)
+
+## Inference
+
+A two sample t-test was performed to test this against the null hypothesis that mean mileage for both types of Transmission are the same.
+```{r ttest, echo=FALSE, results='hide'}
+mtcartest <- t.test(dat$mpg[dat$am == "Manual"], dat$mpg[dat$am == "Automatic"])
+pvalue <- round(mtcartest$p.value, 5)
+mman <- round(mtcartest$estimate[1], 2)
+mauto <- round(mtcartest$estimate[2], 2)
+```
+The p-value, `r pvalue`, is small enough that the null hypothesis can be rejected in favor of the alternative. The means, `r mman` mpg for Manual Transmission and `r mauto` mpg for Automatic Transmission, correspond with what was observed in the boxplot.
+
+## Regression Analysis
+
+Using R's *step* function an optimal model is generated:
+```{r bestmdl, results='hide'}
+mtcars2 <- dat[,-7] # remove qsec as a feature
+initmdl <- lm(mpg ~ ., data = mtcars2) # model mpg against all other variables
+bestmdl <- step(initmdl, direction = "both") # determine step's best model
+```
+The model generated is mpg ~ cyl + hp + wt + am. Tne coefficients and their p-values are as follows:
+```{r coef, echo=FALSE}
+bestcoef <- bestmdl$coefficients
+pvals <- summary(bestmdl)$coef[,4]  
+round(bestcoef, 3)
+paste("P-Values")
+round(pvals, 3)
+```
+Notice, that the variable "am", signifiying Transmission type, is represented as *amManual*, which suggests that mileage increases by `r round(bestcoef[6], 2)` when change from Automatic to Manual, keeping all else constant. However, the **p-value**, `r round(pvals[6], 3)` is greater than $\alpha = 0.5$ significant level, which means the null hypothesis that the coefficient of am is zero cannot be confidently rejected.   
+The best model was then tested against two other models. One, base model, is of the formula mpg ~ am, the second, fit3 has the same formula as the best model excluding the variable **am**. Results of the ANOVA (Analysis of Variance) Test are as follows:
+```{r anova}
+basemdl <- lm(mpg ~ am, mtcars2)
+fit = update(bestmdl, mpg ~ cyl + hp + wt)
+vartest <- anova(basemdl, fit, bestmdl)
+```
+```{r pfit, echo=FALSE}
+pfit <- vartest$`Pr(>F)`[2]
+```
+The p-value, $`r pfit`$, for model fit is below our threshold of 0.05. Here are the coefficients 
+```{r fit, echo=FALSE}
+cofwt <- round(summary(fit)$coef[5], 3)
+summary(fit)$coef
+```
+The p-values suggest that most of the coefficients are significant. The **wt** coefficient suggests that for an increase of 1000 lbs, mileage decreases by `r cofwt` with all else constant. The intercept is mileage for a 4-cylinder car with everything else accounted for. Mileage decreases if cylinders increase. Any changes in Horsepower, hp, seems to have a minute effect.
+
+Residual diagnostics of the model fit suggest that the residulas are quasi-normally distributed, while the outliers have not much significant leverage. (See Appendix - Fig 3)
+*****
+$\pagebreak$
+
+# Appendix
+
+```{r boxplot, echo=FALSE}
+meanA <- mean(dat$mpg[dat$am == "Automatic"])
+meanM <- mean(dat$mpg[dat$am == "Manual"])
+fig1 <- dat %>% ggplot(aes(x = am, y = mpg)) + 
+  geom_boxplot() + 
+  xlab("Transmission Type") + ylab("Miles per (US) Gallon") + 
+  ggtitle("Figure 1") + 
+  geom_hline(yintercept = meanM, colour = "red", size = 1, linetype = 2) + 
+  geom_hline(yintercept = meanA, colour = "blue", size = 1, linetype = 2)
+fig1
+```                
+```{r pairsplot, echo=FALSE, cache=TRUE, fig.height= 6}
+ggpairs(dat, aes(color = am), lower = list(continuous = "smooth"), title = "Fig 2")
+```
+```{r residplot, echo=FALSE}
+par(mfrow= c(2,2))
+plot(fit)
+```
+```{r output1, echo=FALSE}
+t.test(dat$mpg[dat$am == "Manual"], dat$mpg[dat$am == "Automatic"])
+```
